@@ -53,16 +53,10 @@ func (app *application) getCreateBooksHandler(w http.ResponseWriter, r *http.Req
 				Version:   1,
 			},
 		}
-
-		js, err := json.Marshal(books)
-		if err != nil {
+		if err := app.writeJSON(w, http.StatusOK, envelope{"books": books}); err != nil {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
-		js = append(js, '\n')
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(js)
 	}
 
 	if r.Method == "POST" {
@@ -106,16 +100,10 @@ func (app *application) getBook(w http.ResponseWriter, r *http.Request) {
 		Version:   1,
 	}
 
-	js, err := json.Marshal(book)
-	if err != nil {
+	if err := app.writeJSON(w, http.StatusOK, envelope{"book": book}); err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-
-	js = append(js, '\n')
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(js)
 }
 
 func (app *application) updateBook(w http.ResponseWriter, r *http.Request) {

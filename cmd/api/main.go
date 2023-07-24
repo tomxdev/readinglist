@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"readinglist/internal/data"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -23,6 +24,7 @@ type config struct {
 type application struct {
 	config config
 	logger *log.Logger
+	models data.Models
 }
 
 type book struct {

@@ -24,12 +24,12 @@ type BookModel struct {
 
 func (b BookModel) Insert(book *Book) error {
 	query := `
-	INSERT INTO books (title, published, pages, genres, rating)
-	VALUES ($1, $2, $3, $4, $5)
-	RETURNING id, created_at, version`
+		INSERT INTO books (title, published, pages, genres, rating)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, created_at, version`
 
-	args := []interface{}{book.Title, book.Published, book.Pages, pq.Array(book.Genres), book.Rating}
-	// return the auto generated system values to Go Object
+	args := []any{book.Title, book.Published, book.Pages, pq.Array(book.Genres), book.Rating}
+	// return the auto generated system values to Go object
 	return b.DB.QueryRow(query, args...).Scan(&book.ID, &book.CreatedAt, &book.Version)
 }
 
@@ -64,10 +64,17 @@ func (b BookModel) Update(book *Book) error {
 	query := `
         UPDATE books
         SET title = $1, published = $2, pages = $3, genres = $4, rating = $5, version = version + 1
-        WHERE id = $6 AND version = $7
+        WHERE id = $6 
         RETURNING version`
 
-	args := []interface{}{book.Title, book.Published, book.Pages, pq.Array(book.Genres), book.Rating, book.ID}
+	args := []any{
+		book.Title,
+		book.Published,
+		book.Pages,
+		pq.Array(book.Genres),
+		book.Rating,
+		book.ID,
+	}
 	// return the auto generated system values to Go Object
 	return b.DB.QueryRow(query, args...).Scan(&book.Version)
 }

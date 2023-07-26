@@ -43,11 +43,6 @@ func main() {
 	flag.StringVar(&cfg.dsn, "db-dsn", os.Getenv("READINGLIST_DB_DSN"), "PostgreSQL DSN")
 	flag.Parse()
 
-	app := &application{
-		config: cfg,
-		logger: logger,
-	}
-
 	db, err := sql.Open("postgres", cfg.dsn)
 	if err != nil {
 		logger.Fatal(err)
@@ -62,7 +57,14 @@ func main() {
 
 	logger.Printf("database connection pool established.")
 
+	app := &application{
+		config: cfg,
+		logger: logger,
+		models: data.NewModels(db),
+	}
+
 	addr := fmt.Sprintf(":%d", cfg.port)
+
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      app.route(),

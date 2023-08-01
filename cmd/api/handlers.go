@@ -1,49 +1,51 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"readinglist/internal/data"
 	"strconv"
 )
 
-func (app *application) healthcheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+func (app *application) healthcheckHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
-	_data := map[string]string{
-		"status":      "available",
-		"environment": app.config.env,
-		"version":     version,
+
+	_data := envelope{
+		"status": "available",
+		"system_info": map[string]string{
+			"environment": app.config.env,
+			"version":     version,
+		},
 	}
-	js, err := json.Marshal(_data)
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+
+	if err := app.writeJSON(w, http.StatusOK, _data, nil); err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+func (app *application) multiplexer(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		app.getBookHandler(w, r)
+	case "PATCH":
+		app.updateBookHandler(w, r)
+	case "DELETE":
+		app.deleteBookHandler(w, r)
+	default:
+		app.methodNotAllowedResponse(w, r)
+	}
+}
+
+func (app *application) bookHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		app.methodNotAllowedResponse(w, r)
 		return
 	}
 
-	js = append(js, '\n')
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(js)
-}
-
-func (app *application) getCreateBooksHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
-		books, err := app.models.Books.GetAll()
-		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-
-		if err := app.writeJSON(w, http.StatusOK, envelope{"books": books}, nil); err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if r.Method == "POST" {
+	// createBook requests
+	if r.Method == http.MethodPost {
 		var input struct {
 			Title     string   `json:"title"`
 			Published int      `json:"published"`
@@ -54,7 +56,7 @@ func (app *application) getCreateBooksHandler(w http.ResponseWriter, r *http.Req
 
 		err := app.readJSON(w, r, &input)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			app.badRequestResponse(w, r, err)
 			return
 		}
 
@@ -68,7 +70,7 @@ func (app *application) getCreateBooksHandler(w http.ResponseWriter, r *http.Req
 
 		err = app.models.Books.Insert(book)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			app.serverErrorResponse(w, r, err)
 			return
 		}
 
@@ -78,67 +80,63 @@ func (app *application) getCreateBooksHandler(w http.ResponseWriter, r *http.Req
 		// Write the JSON response with a 201 Created status code and the Location header set.
 		err = app.writeJSON(w, http.StatusCreated, envelope{"book": book}, headers)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			app.serverErrorResponse(w, r, err)
+		}
+	}
+
+	if r.Method == http.MethodGet {
+		books, err := app.models.Books.GetAll()
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
 			return
 		}
+
+		err = app.writeJSON(w, http.StatusOK, envelope{"books": books}, nil)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+		}
 	}
 }
 
-func (app *application) getUpdateDeleteBooksHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		{
-			app.getBook(w, r)
-		}
-	case http.MethodPut:
-		{
-			app.updateBook(w, r)
-		}
-	case http.MethodDelete:
-		{
-			app.deleteBook(w, r)
-		}
-	default:
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-	}
-}
-
-func (app *application) getBook(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Path[len("/v1/books/"):]
+func (app *application) getBookHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Path[len("v1/books//"):]
 	idInt, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		app.badRequestResponse(w, r, err)
+		return
 	}
+
 	book, err := app.models.Books.Get(idInt)
 	if err != nil {
 		switch {
-		case errors.Is(err, errors.New("record not found")):
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		case errors.Is(err, data.ErrorRecordNotFound):
+			app.notFoundResponse(w, r)
 		default:
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			app.serverErrorResponse(w, r, err)
 		}
 		return
 	}
+
 	if err := app.writeJSON(w, http.StatusOK, envelope{"book": book}, nil); err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		app.serverErrorResponse(w, r, err)
 	}
 }
 
-func (app *application) updateBook(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Path[len("/v1/books/"):]
+func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Path[len("v1/books//"):]
 	idInt, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		app.badRequestResponse(w, r, err)
+		return
 	}
 
 	book, err := app.models.Books.Get(idInt)
 	if err != nil {
 		switch {
-		case errors.Is(err, errors.New("record not found")):
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		case errors.Is(err, data.ErrorRecordNotFound):
+			app.notFoundResponse(w, r)
 		default:
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			app.serverErrorResponse(w, r, err)
 		}
 		return
 	}
@@ -153,7 +151,7 @@ func (app *application) updateBook(w http.ResponseWriter, r *http.Request) {
 
 	err = app.readJSON(w, r, &input)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		app.badRequestResponse(w, r, err)
 		return
 	}
 
@@ -169,7 +167,7 @@ func (app *application) updateBook(w http.ResponseWriter, r *http.Request) {
 		book.Pages = *input.Pages
 	}
 
-	if len(input.Genres) > 0 {
+	if input.Genres != nil {
 		book.Genres = input.Genres
 	}
 
@@ -179,27 +177,29 @@ func (app *application) updateBook(w http.ResponseWriter, r *http.Request) {
 
 	err = app.models.Books.Update(book)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		app.serverErrorResponse(w, r, err)
 		return
 	}
 
-	if err := app.writeJSON(w, http.StatusOK, envelope{"book": book}, nil); err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+	err = app.writeJSON(w, http.StatusOK, envelope{"book": book}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
 	}
 }
 
-func (app *application) deleteBook(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Path[len("/v1/books/"):]
+func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Path[len("v1/books//"):]
 	idInt, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		app.badRequestResponse(w, r, err)
+		return
 	}
+
 	err = app.models.Books.Delete(idInt)
 	if err != nil {
 		switch {
-		case errors.Is(err, errors.New("record not found")):
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		case errors.Is(err, data.ErrorRecordNotFound):
+			app.notFoundResponse(w, r)
 		default:
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}

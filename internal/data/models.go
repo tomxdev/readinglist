@@ -1,6 +1,13 @@
 package data
 
-import "database/sql"
+import (
+	"database/sql"
+	"errors"
+)
+
+var (
+	ErrorRecordNotFound = errors.New("record not found")
+)
 
 type Models struct {
 	Books BookModel

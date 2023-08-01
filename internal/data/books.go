@@ -12,10 +12,10 @@ type Book struct {
 	CreatedAt time.Time `json:"-"`
 	Title     string    `json:"title"`
 	Published int       `json:"published,omitempty"`
-	Pages     int       `json:"pages,omitempty"`
+	Pages     int       `json:"pages,omitempty,string"` // change return data type to string
 	Genres    []string  `json:"genres,omitempty"`
 	Rating    float32   `json:"rating,omitempty"`
-	Version   int32     `json:"-"`
+	Version   int32     `json:"version"`
 }
 
 type BookModel struct {
@@ -35,28 +35,36 @@ func (b BookModel) Insert(book *Book) error {
 
 func (b BookModel) Get(id int64) (*Book, error) {
 	if id < 1 {
-		return nil, errors.New("record not found.")
+		return nil, ErrorRecordNotFound
 	}
 
 	query := `
-	 SELECT id, title, published, pages, genres, rating, version
-     FROM books
-	 WHERE id = $1`
+		SELECT id, created_at, title, published, pages, genres, rating, version
+		FROM books
+		WHERE id = $1`
 
 	var book Book
 
 	err := b.DB.QueryRow(query, id).Scan(
-		&book.ID, &book.Title, &book.Published, &book.Pages, pq.Array(&book.Genres), &book.Rating, &book.Version,
+		&book.ID,
+		&book.CreatedAt,
+		&book.Title,
+		&book.Published,
+		&book.Pages,
+		pq.Array(&book.Genres),
+		&book.Rating,
+		&book.Version,
 	)
 
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			return nil, errors.New("record not found")
+			return nil, ErrorRecordNotFound
 		default:
 			return nil, err
 		}
 	}
+
 	return &book, nil
 }
 
@@ -81,26 +89,27 @@ func (b BookModel) Update(book *Book) error {
 
 func (b BookModel) Delete(id int64) error {
 	if id < 1 {
-		return errors.New("record not found")
+		return ErrorRecordNotFound
 	}
 
 	query := `
         DELETE FROM books
         WHERE id = $1`
 
-	results, err := b.DB.Exec(query, id)
+	result, err := b.DB.Exec(query, id)
 	if err != nil {
 		return err
 	}
 
-	rowsAffected, err := results.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
 
 	if rowsAffected == 0 {
-		return errors.New("record not found")
+		return ErrorRecordNotFound
 	}
+
 	return nil
 }
 
@@ -114,21 +123,34 @@ func (b BookModel) GetAll() ([]*Book, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
-	var books []*Book
+	books := []*Book{}
+
 	for rows.Next() {
 		var book Book
+
 		err := rows.Scan(
-			&book.ID, &book.Title, &book.Published, &book.Pages, pq.Array(&book.Genres), &book.Rating, &book.Version,
+			&book.ID,
+			&book.CreatedAt,
+			&book.Title,
+			&book.Published,
+			&book.Pages,
+			pq.Array(&book.Genres),
+			&book.Rating,
+			&book.Version,
 		)
 		if err != nil {
 			return nil, err
 		}
+
 		books = append(books, &book)
 	}
+
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return books, nil
 }

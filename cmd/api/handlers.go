@@ -201,14 +201,13 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, data.ErrorRecordNotFound):
 			app.notFoundResponse(w, r)
 		default:
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			app.serverErrorResponse(w, r, err)
 		}
 		return
 	}
 
 	err = app.writeJSON(w, http.StatusOK, envelope{"message": "book successfully deleted"}, nil)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		app.serverErrorResponse(w, r, err)
 	}
 }

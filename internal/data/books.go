@@ -115,9 +115,9 @@ func (b BookModel) Delete(id int64) error {
 
 func (b BookModel) GetAll() ([]*Book, error) {
 	query := `
-        SELECT id, title, published, pages, genres, rating, version
-        FROM books
-        ORDER BY id`
+	  SELECT *
+	  FROM books
+	  ORDER BY id`
 
 	rows, err := b.DB.Query(query)
 	if err != nil {
